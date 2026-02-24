@@ -1,0 +1,35 @@
+{
+  "name": "smartpost-ai",
+  "version": "1.0.0",
+  "description": "AI-powered blog generation from trending topics in workforce and business services niche",
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host",
+    "build": "vite build",
+    "preview": "vite preview",
+    "server": "node server/index.js",
+    "start": "concurrently \"npm run server\" \"npm run dev\""
+  },
+  "keywords": [
+    "ai",
+    "blog",
+    "content-generation",
+    "trending-topics",
+    "workforce"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "express": "^4.18.2",
+    "cors": "^2.8.5",
+    "dotenv": "^16.3.1",
+    "axios": "^1.6.2",
+    "openai": "^4.24.1",
+    "cheerio": "^1.0.0-rc.12",
+    "express-rate-limit": "^7.1.5"
+  },
+  "devDependencies": {
+    "vite": "^5.0.8",
+    "concurrently": "^8.2.2"
+  }
+}

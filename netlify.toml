@@ -1,0 +1,11 @@
+[[redirects]]
+  from = "/api/*"
+  # TODO: Replace 'your-backend-url.onrender.com' with your actual Render deployment URL
+  to = "https://your-backend-url.onrender.com/api/:splat"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
