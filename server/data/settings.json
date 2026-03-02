@@ -3,5 +3,11 @@
   "defaultTone": "professional",
   "defaultLength": "medium",
   "defaultFormat": "blog-post",
-  "openaiKey": ""
+  "openaiKey": "",
+  "aiProvider": "gemini",
+  "aiModel": "gemini-flash-latest",
+  "geminiKey": "",
+  "claudeKey": "",
+  "wpUrl": "",
+  "wpUser": ""
 }

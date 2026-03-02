@@ -124,10 +124,13 @@ class ApiClient {
     }
 
     // ── Validation ────────────────────────────────
-    async validateConfig() {
-        const response = await fetch(`${API_BASE_URL}/validate`);
-        if (!response.ok) throw new Error('Failed to validate');
-        return response.json();
+    async validateConfig(config) {
+        const response = await fetch(`${API_BASE_URL}/validate-config`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(config)
+        });
+        return await response.json();
     }
 
     // ── AI Image Generation ───────────────────────

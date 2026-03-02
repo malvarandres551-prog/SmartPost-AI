@@ -127,12 +127,10 @@ app.post('/api/generate-blog', blogLimiter, async (req, res) => {
             researchData = await trendingService.getTopicResearch(topic);
         }
 
-        // Fetch settings from dataService to get UI-configured API key and Model
+        // Fetch settings from dataService to get UI-configured API configuration
         const settings = dataService.getSettings();
-        const apiKey = settings.openaiKey;
-        const aiModel = settings.aiModel;
 
-        const blog = await blogService.generateBlog(topic, researchData, options, apiKey, aiModel);
+        const blog = await blogService.generateBlog(topic, researchData, options, settings);
         res.json({ success: true, blog });
     } catch (error) {
         console.error('Error in /api/generate-blog:', error);
@@ -286,20 +284,13 @@ app.get('/api/stats', (req, res) => {
 
 // ── Validation ────────────────────────────────────
 
-app.get('/api/validate', async (req, res) => {
+app.post('/api/validate-config', async (req, res) => {
     try {
-        const openaiValid = await blogService.validateApiKey();
-        const newsApiConfigured = !!process.env.NEWS_API_KEY;
-        res.json({
-            success: true,
-            configuration: { openai: openaiValid, newsApi: newsApiConfigured },
-            warnings: [
-                !openaiValid && 'OpenAI API key is invalid or not configured',
-                !newsApiConfigured && 'News API key is not configured (fallback topics will be used)',
-            ].filter(Boolean),
-        });
+        const { provider, key } = req.body;
+        const isValid = await blogService.validateApiKey(provider, key);
+        res.json({ success: isValid });
     } catch (error) {
-        res.status(500).json({ success: false, error: 'Configuration validation failed', message: error.message });
+        res.status(500).json({ success: false, error: error.message });
     }
 });
 

@@ -3,6 +3,9 @@ import DashboardPage from './pages/DashboardPage.js';
 import TopicExplorerPage from './pages/TopicExplorerPage.js';
 import ArticleGeneratorPage from './pages/ArticleGeneratorPage.js';
 import SavedArticlesPage from './pages/SavedArticlesPage.js';
+import BatchGeneratorPage from './pages/BatchGeneratorPage.js';
+import ContentCalendarPage from './pages/ContentCalendarPage.js';
+import MediaLibraryPage from './pages/MediaLibraryPage.js';
 import SettingsPage from './pages/SettingsPage.js';
 
 class App {
@@ -15,6 +18,9 @@ class App {
         router.addRoute('#/dashboard', new DashboardPage());
         router.addRoute('#/explorer', new TopicExplorerPage());
         router.addRoute('#/generator', new ArticleGeneratorPage());
+        router.addRoute('#/batch', new BatchGeneratorPage());
+        router.addRoute('#/calendar', new ContentCalendarPage());
+        router.addRoute('#/media', new MediaLibraryPage());
         router.addRoute('#/articles', new SavedArticlesPage());
         router.addRoute('#/settings', new SettingsPage());
 

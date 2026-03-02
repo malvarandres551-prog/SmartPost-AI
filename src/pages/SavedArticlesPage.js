@@ -102,6 +102,18 @@ class SavedArticlesPage {
                             <button class="btn btn-ghost btn-sm btn-block" style="width: 100%; text-align: left;" data-action="publish-webhook" data-id="${article.id}">Webhook</button>
                         </div>
                     </div>
+                    <div style="position: relative; display: inline-block;">
+                        <button class="btn-icon" title="Schedule" data-action="schedule-toggle" data-id="${article.id}">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/>
+                            </svg>
+                        </button>
+                        <div id="scheduleDrop-${article.id}" class="dropdown-menu row-dropdown" style="display: none; position: absolute; top: 100%; right: 0; background: var(--color-bg-secondary); border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; padding: 1rem; width: 240px; z-index: 100; box-shadow: var(--shadow-lg);">
+                            <label class="form-label">Schedule Date & Time</label>
+                            <input type="datetime-local" id="scheduleDate-${article.id}" class="form-input mb-sm" style="margin-bottom: 0.5rem;" value="${article.scheduledAt ? article.scheduledAt.substring(0, 16) : ''}">
+                            <button class="btn btn-primary btn-sm btn-block" style="width: 100%;" data-action="schedule-confirm" data-id="${article.id}">Confirm Schedule</button>
+                        </div>
+                    </div>
                     <button class="btn-icon" title="Toggle status" data-action="toggle" data-id="${article.id}"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg></button>
                     <button class="btn-icon" title="Download" data-action="download" data-id="${article.id}"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg></button>
                     <button class="btn-icon btn-icon-danger" title="Delete" data-action="delete" data-id="${article.id}"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg></button>
@@ -117,6 +129,15 @@ class SavedArticlesPage {
                     const menu = document.getElementById(`publishDrop-${id}`);
                     document.querySelectorAll('.row-dropdown').forEach(m => { if (m !== menu) m.style.display = 'none'; });
                     menu.style.display = menu.style.display === 'none' ? 'block' : 'none';
+                }
+                if (action === 'schedule-toggle') {
+                    const menu = document.getElementById(`scheduleDrop-${id}`);
+                    document.querySelectorAll('.row-dropdown').forEach(m => { if (m !== menu) m.style.display = 'none'; });
+                    menu.style.display = menu.style.display === 'none' ? 'block' : 'none';
+                }
+                if (action === 'schedule-confirm') {
+                    const dateInput = document.getElementById(`scheduleDate-${id}`);
+                    if (dateInput?.value) this._scheduleArticle(id, dateInput.value);
                 }
                 if (action === 'publish-wp') this._publish(id, 'wordpress');
                 if (action === 'publish-webhook') this._publish(id, 'webhook');
@@ -140,7 +161,30 @@ class SavedArticlesPage {
         const a = storage.getArticleById(id);
         if (!a) return;
         storage.updateArticle(id, { status: a.status === 'draft' ? 'published' : 'draft' });
+        apiClient.updateArticle(id, { status: a.status === 'draft' ? 'published' : 'draft' }).catch(() => { });
         this._loadArticles();
+    }
+
+    async _scheduleArticle(id, date) {
+        try {
+            const updates = {
+                status: 'scheduled',
+                scheduledAt: new Date(date).toISOString()
+            };
+
+            // Update local storage
+            storage.updateArticle(id, updates);
+
+            // Sync with backend if available
+            await apiClient.updateArticle(id, updates);
+
+            this._toast('Article scheduled to calendar!');
+            this._loadArticles();
+        } catch (error) {
+            console.error('Scheduling failed:', error);
+            this._toast('Saved to calendar (locally)', false); // It's still in storage
+            this._loadArticles();
+        }
     }
 
     _downloadArticle(id) {

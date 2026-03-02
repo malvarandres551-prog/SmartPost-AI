@@ -139,6 +139,7 @@ class ArticleGeneratorPage {
     }
 
     mount() {
+        document.getElementById('generateBtn')?.addEventListener('click', () => this._generate());
         document.getElementById('generateImageBtn')?.addEventListener('click', () => this._generateImage());
 
         // Research depth

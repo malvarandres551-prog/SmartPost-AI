@@ -1,23 +1,53 @@
 import OpenAI from 'openai';
+import { GoogleGenerativeAI } from '@google/generative-ai';
+import Anthropic from '@anthropic-ai/sdk';
 import { blogPromptTemplates } from '../utils/promptTemplates.js';
 
 // AI-powered blog generation service
 class BlogGenerationService {
     constructor() {
-        this.openai = new OpenAI({
-            apiKey: process.env.OPENAI_API_KEY,
-        });
+        this.openai = null;
+        this.gemini = null;
+        this.claude = null;
 
-        this.model = process.env.AI_MODEL || 'gpt-4-turbo-preview';
+        this.defaultModel = process.env.AI_MODEL || 'gpt-4o-mini';
         this.maxTokens = parseInt(process.env.MAX_TOKENS) || 3000;
         this.temperature = parseFloat(process.env.TEMPERATURE) || 0.7;
+    }
+
+    // Initialize provider instance if not already exists
+    _initProvider(provider, apiKey) {
+        if (!apiKey) return null;
+
+        switch (provider) {
+            case 'openai':
+                if (!this.openai || this.openai.apiKey !== apiKey) {
+                    this.openai = new OpenAI({ apiKey });
+                }
+                return this.openai;
+            case 'gemini':
+                if (!this.gemini || this.gemini.apiKey !== apiKey) {
+                    this.gemini = new GoogleGenerativeAI(apiKey);
+                }
+                return this.gemini;
+            case 'claude':
+                if (!this.claude || this.claude.apiKey !== apiKey) {
+                    this.claude = new Anthropic({ apiKey });
+                }
+                return this.claude;
+            default:
+                return null;
+        }
     }
 
     // Generate a featured image using DALL-E 3
     async generateImage(topic, apiKey = null) {
         try {
-            const currentApiKey = apiKey || process.env.OPENAI_API_KEY;
-            const client = apiKey ? new OpenAI({ apiKey }) : this.openai;
+            const rawKey = apiKey || process.env.OPENAI_API_KEY;
+            const trimmedKey = rawKey?.trim();
+
+            if (!trimmedKey) throw new Error('OpenAI key required for images');
+            const client = new OpenAI({ apiKey: trimmedKey });
 
             console.log(`🖼️ Generating image for topic: ${topic.title}`);
 
@@ -33,97 +63,60 @@ class BlogGenerationService {
             return response.data[0].url;
         } catch (error) {
             console.error('❌ Error generating image:', error.message);
+            // Re-throw with a cleaner message for the UI
+            if (error.status === 401) {
+                throw new Error('Invalid OpenAI API Key. Please check your key in Settings.');
+            }
+            if (error.status === 429) {
+                throw new Error('OpenAI Quota exceeded. Please check your billing/limits.');
+            }
             throw error;
         }
     }
 
-    // Helper method to call OpenAI with retry logic (exponential backoff)
-    async _callWithRetry(client, callFn, maxRetries = 3) {
-        let lastError;
-        for (let i = 0; i < maxRetries; i++) {
-            try {
-                return await callFn();
-            } catch (error) {
-                lastError = error;
-                // Only retry on rate limit (429) or transient server errors (500, 503)
-                if (error.status === 429 || error.status >= 500) {
-                    const waitTime = Math.pow(2, i) * 1000 + Math.random() * 1000;
-                    console.warn(`⚠️ OpenAI API error (${error.status}). Retrying in ${Math.round(waitTime)}ms... (Attempt ${i + 1}/${maxRetries})`);
-                    await new Promise(resolve => setTimeout(resolve, waitTime));
-                } else {
-                    throw error;
-                }
-            }
-        }
-        throw lastError;
-    }
-
     // Main method to generate blog post
-    async generateBlog(topic, researchData, options = {}, apiKey = null, model = null) {
+    async generateBlog(topic, researchData, options = {}, settings = {}) {
         try {
-            const currentApiKey = apiKey || process.env.OPENAI_API_KEY;
-            const currentModel = model || process.env.AI_MODEL || this.model;
+            const provider = settings.aiProvider || 'openai';
+            const apiKey = settings[`${provider}Key`] || process.env[`${provider.toUpperCase()}_API_KEY`];
+            const model = settings.aiModel || this.defaultModel;
 
-            if (!currentApiKey || currentApiKey.trim() === '') {
-                throw new Error('OpenAI API key is missing. Please configure it in Settings.');
+            if (!apiKey) {
+                throw new Error(`${provider.charAt(0).toUpperCase() + provider.slice(1)} API key is missing.`);
             }
-
-            // Re-initialize OpenAI client if a different key is provided
-            const client = apiKey ? new OpenAI({ apiKey }) : this.openai;
 
             console.log(`\n--- Starting Blog Generation ---`);
             console.log(`Topic: ${topic.title}`);
-            console.log(`Model: ${currentModel}`);
-            console.log(`Options:`, JSON.stringify(options));
-            console.log(`API Key hash: ${currentApiKey.substring(0, 8)}...`);
+            console.log(`Provider: ${provider}`);
+            console.log(`Model: ${model}`);
 
-            // Dynamically adjust max tokens based on requested length
-            let currentMaxTokens = this.maxTokens;
-            if (options.length === 'long') currentMaxTokens = Math.max(currentMaxTokens, 4000);
-            if (options.length === 'medium') currentMaxTokens = Math.max(currentMaxTokens, 3000);
-            if (options.length === 'short') currentMaxTokens = Math.max(currentMaxTokens, 1500);
+            const prompt = blogPromptTemplates.generateBlog(topic, researchData.summary || researchData, options);
 
-            // Ensure research summary exists
-            const researchSummary = researchData?.summary || (typeof researchData === 'string' ? researchData : 'No research data provided.');
+            let result;
+            if (provider === 'gemini') {
+                result = await this._generateGemini(apiKey, model, prompt, options);
+            } else if (provider === 'claude') {
+                result = await this._generateClaude(apiKey, model, prompt, options);
+            } else {
+                result = await this._generateOpenAI(apiKey, model, prompt, options);
+            }
 
-            // Create the prompt
-            const prompt = blogPromptTemplates.generateBlog(topic, researchSummary, options);
+            // Ensure word count and reading time are present
+            if (!result.wordCount) {
+                const words = JSON.stringify(result).split(/\s+/).length;
+                result.wordCount = words;
+                result.readingTime = `${Math.ceil(words / 225)} min`;
+            }
 
-            console.log('Sending request to OpenAI...');
-
-            // Call OpenAI API with retry logic
-            const completion = await this._callWithRetry(client, () => client.chat.completions.create({
-                model: currentModel,
-                messages: [
-                    {
-                        role: 'system',
-                        content: 'You are an expert content writer specializing in workforce management, HR, and business services. You create professional, insightful blog posts for decision-makers and business leaders. Ensure you meet the requested word count length strictly.',
-                    },
-                    {
-                        role: 'user',
-                        content: prompt,
-                    },
-                ],
-                temperature: this.temperature,
-                max_tokens: currentMaxTokens,
-                response_format: { type: 'json_object' },
-            }));
-
-            // Parse the response
-            const responseContent = completion.choices[0].message.content;
-            const generatedContent = JSON.parse(responseContent);
-
-            // Add metadata
             const blogPost = {
-                ...generatedContent,
+                ...result,
                 topic: topic.title,
                 category: topic.category,
                 generatedAt: new Date().toISOString(),
-                model: this.model,
+                model: model,
+                provider: provider,
                 sources: researchData?.articles?.slice(0, 5).map(a => ({
-                    title: a.title,
-                    url: a.url,
-                    source: a.source,
+                    title: a.title, url: a.url, source: a.source
                 })) || [],
             };
 
@@ -132,109 +125,123 @@ class BlogGenerationService {
 
         } catch (error) {
             console.error('❌ Error generating blog:', error.message);
-            if (error.response) {
-                console.error('OpenAI Error Details:', JSON.stringify(error.response.data));
-            }
-
-            // Return fallback blog if AI fails
             const fallback = this.generateFallbackBlog(topic);
             fallback.note = `AI generation failed: ${error.message}`;
             return fallback;
         }
     }
 
-    // Generate a quick blog (faster, less detailed)
-    async generateQuickBlog(topic) {
+    async _generateOpenAI(apiKey, model, prompt, options) {
+        const client = this._initProvider('openai', apiKey);
+        let maxTokens = this.maxTokens;
+        if (options.length === 'long') maxTokens = 4000;
+
+        const completion = await client.chat.completions.create({
+            model,
+            messages: [
+                { role: 'system', content: 'You are a professional blog writer. Return JSON only.' },
+                { role: 'user', content: prompt }
+            ],
+            temperature: this.temperature,
+            max_tokens: maxTokens,
+            response_format: { type: 'json_object' }
+        });
+
+        return JSON.parse(completion.choices[0].message.content);
+    }
+
+    async _generateGemini(apiKey, model, prompt, options) {
+        const genAI = this._initProvider('gemini', apiKey);
+        const modelInstance = genAI.getGenerativeModel({ model });
+
+        // Gemini doesn't have a direct "json_object" mode like OpenAI in all SDK versions, 
+        // so we prompt for it and clean the response.
+        const result = await modelInstance.generateContent(prompt);
+        const response = await result.response;
+        const text = response.text();
+
         try {
-            const prompt = blogPromptTemplates.generateQuickBlog(topic);
-
-            const completion = await this.openai.chat.completions.create({
-                model: 'gpt-3.5-turbo',
-                messages: [
-                    {
-                        role: 'system',
-                        content: 'You are a professional content writer. Create concise, actionable blog posts.',
-                    },
-                    {
-                        role: 'user',
-                        content: prompt,
-                    },
-                ],
-                temperature: 0.7,
-                max_tokens: 2000,
-                response_format: { type: 'json_object' },
-            });
-
-            return JSON.parse(completion.choices[0].message.content);
-
-        } catch (error) {
-            console.error('Error generating quick blog:', error);
-            return this.generateFallbackBlog(topic);
+            const cleanText = text.replace(/^```json\n?/, '').replace(/\n?```$/, '').trim();
+            return JSON.parse(cleanText);
+        } catch (e) {
+            console.error('Gemini JSON parse failed, returning raw text as introduction');
+            return {
+                headline: "Generated Content",
+                content: { introduction: text },
+                wordCount: text.split(/\s+/).length
+            };
         }
     }
 
-    // Fallback blog when AI is unavailable
+    async _generateClaude(apiKey, model, prompt, options) {
+        const anthropic = this._initProvider('claude', apiKey);
+
+        const message = await anthropic.messages.create({
+            model,
+            max_tokens: 4000,
+            system: "You are a professional blog writer. You MUST return ONLY valid JSON matching the requested schema.",
+            messages: [{ role: "user", content: prompt }]
+        });
+
+        const text = message.content[0].text;
+        return JSON.parse(text);
+    }
+
     generateFallbackBlog(topic) {
         return {
             headline: topic.title,
-            metaDescription: topic.description || `Explore insights and strategies about ${topic.title} for modern workforce management.`,
-            tags: ['workforce', 'HR', 'business', topic.category?.toLowerCase()].filter(Boolean),
+            metaDescription: `Insights about ${topic.title}.`,
+            tags: ['workforce', 'business'],
             content: {
-                introduction: `${topic.description || topic.title}\n\nIn today's rapidly evolving business landscape, understanding this topic is crucial for HR professionals and business leaders. This article explores the key aspects and provides actionable insights.`,
-                sections: [
-                    {
-                        heading: 'Understanding the Current Landscape',
-                        content: 'The workforce management industry is experiencing significant transformation. Organizations are adapting to new challenges and opportunities in this area.',
-                    },
-                    {
-                        heading: 'Key Strategies for Success',
-                        content: 'Successful implementation requires a strategic approach. Leaders should focus on data-driven decision making, employee engagement, and continuous improvement.',
-                    },
-                    {
-                        heading: 'Best Practices and Recommendations',
-                        content: 'Industry experts recommend starting with a clear assessment of current capabilities, setting measurable goals, and investing in the right technology and training.',
-                    },
-                ],
-                conclusion: 'As the industry continues to evolve, staying informed and adaptable is essential for success.',
-                keyTakeaways: [
-                    'Stay informed about industry trends and innovations',
-                    'Invest in technology and employee development',
-                    'Focus on data-driven decision making',
-                    'Prioritize employee engagement and retention',
-                ],
+                introduction: `Understanding ${topic.title} is essential for HR leaders.`,
+                sections: [{ heading: 'Key Insights', content: 'Content coming soon...' }],
+                conclusion: 'Stay tuned for more updates.',
+                keyTakeaways: ['Learn more about this topic.']
             },
             wordCount: 800,
             readingTime: '4 min',
-            topic: topic.title,
-            category: topic.category,
-            generatedAt: new Date().toISOString(),
-            model: 'fallback',
-            sources: [],
-            note: 'This is a fallback blog post. AI generation was unavailable.',
+            model: 'fallback'
         };
     }
 
-    // Validate OpenAI API key
-    async validateApiKey() {
+    async validateApiKey(provider, apiKey) {
         try {
-            await this.openai.models.list();
+            const trimmedKey = apiKey?.trim();
+            if (!trimmedKey) return false;
+
+            if (provider === 'openai') {
+                const client = new OpenAI({ apiKey: trimmedKey });
+                await client.models.list();
+            } else if (provider === 'gemini') {
+                const genAI = new GoogleGenerativeAI(trimmedKey);
+                // Use latest flash alias which is verified to be available in the logs
+                const model = genAI.getGenerativeModel({ model: "gemini-flash-latest" });
+                await model.generateContent("test");
+            } else if (provider === 'claude') {
+                const anthropic = new Anthropic({ apiKey: trimmedKey });
+                await anthropic.messages.create({
+                    model: "claude-3-haiku-20240307",
+                    max_tokens: 1,
+                    messages: [{ role: "user", content: "test" }]
+                });
+            }
             return true;
         } catch (error) {
-            console.error('OpenAI API key validation failed:', error.message);
-            return false;
-        }
-    }
-
-    // Get available models
-    async getAvailableModels() {
-        try {
-            const models = await this.openai.models.list();
-            return models.data
-                .filter(m => m.id.includes('gpt'))
-                .map(m => m.id);
-        } catch (error) {
-            console.error('Error fetching models:', error);
-            return [];
+            let message = error.message;
+            // Clean up Anthropic error messages which often contain raw JSON strings
+            if (provider === 'claude' && message.includes('{')) {
+                try {
+                    const jsonStr = message.substring(message.indexOf('{'));
+                    const errorData = JSON.parse(jsonStr);
+                    if (errorData.error?.message) {
+                        message = errorData.error.message;
+                    }
+                } catch (e) {
+                    // Fallback to original message
+                }
+            }
+            console.error(`${provider} validation failed:`, message);
+            throw new Error(message);
         }
     }
 }
