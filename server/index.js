@@ -34,26 +34,29 @@ const dataService = new DataService();
 app.use(cors());
 app.use(express.json());
 
-// Rate limiting
+// API Router
+const apiRouter = express.Router();
+
+// Rate limiting for API
 const limiter = rateLimit({
     windowMs: 15 * 60 * 1000,
     max: 100,
-    message: 'Too many requests from this IP, please try again later.',
+    message: { success: false, message: 'Too many requests from this IP, please try again later.' },
 });
-app.use('/api/', limiter);
+apiRouter.use(limiter);
 
 const blogLimiter = rateLimit({
     windowMs: 60 * 60 * 1000,
     max: 10,
-    message: 'Blog generation limit reached. Please try again later.',
+    message: { success: false, message: 'Blog generation limit reached. Please try again later.' },
 });
 
 // ═══════════════════════════════════════════════════
-// ROUTES
+// API ROUTES
 // ═══════════════════════════════════════════════════
 
 // Health check
-app.get('/api/health', (req, res) => {
+apiRouter.get('/health', (req, res) => {
     res.json({
         status: 'ok',
         timestamp: new Date().toISOString(),
@@ -63,13 +66,12 @@ app.get('/api/health', (req, res) => {
 
 // ── Trending Topics ───────────────────────────────
 
-app.get('/api/trending', async (req, res) => {
+apiRouter.get('/trending', async (req, res) => {
     try {
         const { q, refresh } = req.query;
         const forceRefresh = refresh === 'true';
         console.log(q ? `Searching topics for: ${q}` : `Fetching ${forceRefresh ? 'fresh ' : ''}trending topics...`);
 
-        // Pass search query and force flag to service
         const topics = await trendingService.getTrendingTopics(q, forceRefresh);
         console.log(`[Backend] Returning ${topics.length} topics`);
 
@@ -91,11 +93,11 @@ app.get('/api/trending', async (req, res) => {
 
 // ── Research ──────────────────────────────────────
 
-app.post('/api/research', async (req, res) => {
+apiRouter.post('/research', async (req, res) => {
     try {
         const { topic, depth } = req.body;
         if (!topic || !topic.title) {
-            return res.status(400).json({ success: false, error: 'Topic is required' });
+            return res.status(400).json({ success: false, message: 'Topic is required' });
         }
 
         console.log(`Researching topic: ${topic.title} (Depth: ${depth || 'standard'})`);
@@ -113,11 +115,11 @@ app.post('/api/research', async (req, res) => {
 
 // ── Blog Generation ───────────────────────────────
 
-app.post('/api/generate-blog', blogLimiter, async (req, res) => {
+apiRouter.post('/generate-blog', blogLimiter, async (req, res) => {
     try {
         const { topic, research, options } = req.body;
         if (!topic || !topic.title) {
-            return res.status(400).json({ success: false, error: 'Topic is required' });
+            return res.status(400).json({ success: false, message: 'Topic is required' });
         }
 
         console.log(`Generating blog for: ${topic.title}`);
@@ -127,9 +129,7 @@ app.post('/api/generate-blog', blogLimiter, async (req, res) => {
             researchData = await trendingService.getTopicResearch(topic);
         }
 
-        // Fetch settings from dataService to get UI-configured API configuration
         const settings = dataService.getSettings();
-
         const blog = await blogService.generateBlog(topic, researchData, options, settings);
         res.json({ success: true, blog });
     } catch (error) {
@@ -144,59 +144,59 @@ app.post('/api/generate-blog', blogLimiter, async (req, res) => {
 
 // ── Articles CRUD ─────────────────────────────────
 
-app.get('/api/articles', (req, res) => {
+apiRouter.get('/articles', (req, res) => {
     try {
         const articles = dataService.getArticles();
         res.json({ success: true, articles });
     } catch (error) {
         console.error('Error in GET /api/articles:', error);
-        res.status(500).json({ success: false, error: 'Failed to fetch articles' });
+        res.status(500).json({ success: false, message: 'Failed to fetch articles' });
     }
 });
 
-app.post('/api/articles', (req, res) => {
+apiRouter.post('/articles', (req, res) => {
     try {
         const article = dataService.saveArticle(req.body);
         res.json({ success: true, article });
     } catch (error) {
         console.error('Error in POST /api/articles:', error);
-        res.status(500).json({ success: false, error: 'Failed to save article' });
+        res.status(500).json({ success: false, message: 'Failed to save article' });
     }
 });
 
-app.patch('/api/articles/:id', (req, res) => {
+apiRouter.patch('/articles/:id', (req, res) => {
     try {
         const article = dataService.updateArticle(req.params.id, req.body);
         if (!article) {
-            return res.status(404).json({ success: false, error: 'Article not found' });
+            return res.status(404).json({ success: false, message: 'Article not found' });
         }
         res.json({ success: true, article });
     } catch (error) {
         console.error('Error in PATCH /api/articles/:id:', error);
-        res.status(500).json({ success: false, error: 'Failed to update article' });
+        res.status(500).json({ success: false, message: 'Failed to update article' });
     }
 });
 
-app.delete('/api/articles/:id', (req, res) => {
+apiRouter.delete('/articles/:id', (req, res) => {
     try {
         const deleted = dataService.deleteArticle(req.params.id);
         if (!deleted) {
-            return res.status(404).json({ success: false, error: 'Article not found' });
+            return res.status(404).json({ success: false, message: 'Article not found' });
         }
         res.json({ success: true });
     } catch (error) {
         console.error('Error in DELETE /api/articles/:id:', error);
-        res.status(500).json({ success: false, error: 'Failed to delete article' });
+        res.status(500).json({ success: false, message: 'Failed to delete article' });
     }
 });
 
-app.post('/api/articles/:id/generate-image', async (req, res) => {
+apiRouter.post('/articles/:id/generate-image', async (req, res) => {
     try {
         const { id } = req.params;
         const article = dataService.getArticles().find(a => a.id === id);
 
         if (!article) {
-            return res.status(404).json({ success: false, error: 'Article not found' });
+            return res.status(404).json({ success: false, message: 'Article not found' });
         }
 
         const settings = dataService.getSettings();
@@ -214,13 +214,13 @@ app.post('/api/articles/:id/generate-image', async (req, res) => {
     }
 });
 
-app.post('/api/articles/:id/publish', async (req, res) => {
+apiRouter.post('/articles/:id/publish', async (req, res) => {
     try {
         const { id } = req.params;
-        const { platform } = req.body; // 'wordpress' or 'webhook'
+        const { platform } = req.body;
 
         const article = dataService.getArticles().find(a => a.id === id);
-        if (!article) return res.status(404).json({ success: false, error: 'Article not found' });
+        if (!article) return res.status(404).json({ success: false, message: 'Article not found' });
 
         const settings = dataService.getSettings();
         let result;
@@ -234,7 +234,7 @@ app.post('/api/articles/:id/publish', async (req, res) => {
         } else if (platform === 'webhook') {
             result = await publishingService.triggerWebhook(article, settings.webhookUrl);
         } else {
-            return res.status(400).json({ success: false, error: 'Invalid platform' });
+            return res.status(400).json({ success: false, message: 'Invalid platform' });
         }
 
         if (result.success) {
@@ -244,54 +244,67 @@ app.post('/api/articles/:id/publish', async (req, res) => {
         res.json(result);
     } catch (error) {
         console.error('Publishing failed:', error);
-        res.status(500).json({ success: false, error: error.message });
+        res.status(500).json({ success: false, message: error.message });
     }
 });
 
 // ── Settings ──────────────────────────────────────
 
-app.get('/api/settings', (req, res) => {
+apiRouter.get('/settings', (req, res) => {
     try {
         const settings = dataService.getSettings();
         res.json({ success: true, settings });
     } catch (error) {
         console.error('Error in GET /api/settings:', error);
-        res.status(500).json({ success: false, error: 'Failed to fetch settings' });
+        res.status(500).json({ success: false, message: 'Failed to fetch settings' });
     }
 });
 
-app.put('/api/settings', (req, res) => {
+apiRouter.put('/settings', (req, res) => {
     try {
         const settings = dataService.updateSettings(req.body);
         res.json({ success: true, settings });
     } catch (error) {
         console.error('Error in PUT /api/settings:', error);
-        res.status(500).json({ success: false, error: 'Failed to update settings' });
+        res.status(500).json({ success: false, message: 'Failed to update settings' });
     }
 });
 
 // ── Stats ─────────────────────────────────────────
 
-app.get('/api/stats', (req, res) => {
+apiRouter.get('/stats', (req, res) => {
     try {
         const stats = dataService.getStats();
         res.json({ success: true, stats });
     } catch (error) {
         console.error('Error in GET /api/stats:', error);
-        res.status(500).json({ success: false, error: 'Failed to fetch stats' });
+        res.status(500).json({ success: false, message: 'Failed to fetch stats' });
     }
 });
 
 // ── Validation ────────────────────────────────────
 
-app.post('/api/validate-config', async (req, res) => {
+apiRouter.post('/validate-config', async (req, res) => {
     try {
         const { provider, key } = req.body;
         const isValid = await blogService.validateApiKey(provider, key);
         res.json({ success: isValid });
     } catch (error) {
-        res.status(500).json({ success: false, error: error.message });
+        res.status(500).json({ success: false, message: error.message });
     }
+});
+
+// Mount the API Router
+app.use('/api', apiRouter);
+
+// Handler for 404s within /api
+apiRouter.use((req, res) => {
+    console.log(`[API 404] ${req.method} ${req.url}`);
+    res.status(404).json({
+        success: false,
+        error: 'Endpoint not found',
+        message: `No API route matched for: ${req.method} /api${req.url}`
+    });
 });
 
 // ═══════════════════════════════════════════════════
@@ -308,17 +321,19 @@ app.use((err, req, res, next) => {
 });
 
 app.use((req, res) => {
-    res.status(404).json({ success: false, error: 'Endpoint not found' });
+    res.status(404).json({ success: false, error: 'Endpoint not found', message: `No API route matched for: ${req.method} ${req.url}` });
 });
 
-// Start server
-app.listen(PORT, () => {
-    console.log(`\n🚀 SmartPost AI API Server running on port ${PORT}`);
-    console.log(`📊 Health check: http://localhost:${PORT}/api/health`);
-    console.log(`📈 Trending topics: http://localhost:${PORT}/api/trending`);
-    console.log(`✍️  Generate blog: http://localhost:${PORT}/api/generate-blog`);
-    console.log(`📁 Articles: http://localhost:${PORT}/api/articles`);
-    console.log(`⚙️  Settings: http://localhost:${PORT}/api/settings\n`);
-});
+// Start server only if not in a serverless environment (e.g. Vercel)
+if (!process.env.VERCEL) {
+    app.listen(PORT, () => {
+        console.log(`\n🚀 SmartPost AI API Server running on port ${PORT}`);
+        console.log(`📊 Health check: http://localhost:${PORT}/api/health`);
+        console.log(`📈 Trending topics: http://localhost:${PORT}/api/trending`);
+        console.log(`✍️  Generate blog: http://localhost:${PORT}/api/generate-blog`);
+        console.log(`📁 Articles: http://localhost:${PORT}/api/articles`);
+        console.log(`⚙️  Settings: http://localhost:${PORT}/api/settings\n`);
+    });
+}
 
 export default app;

@@ -31,7 +31,7 @@ echo      (This window MUST stay open while you use the app)
 echo.
 
 :: Auto-open browser after 8 seconds
-start /b cmd /c "timeout /t 8 >nul && start http://localhost:5173"
+start /b cmd /c "timeout /t 8 >nul && start http://localhost:5175"
 
 :: Start the app
 call npm start

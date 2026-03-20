@@ -1,0 +1,8 @@
+HTTP/1.1 500 Internal Server Error
+Vary: Origin
+Content-Type: text/plain
+Date: Fri, 20 Mar 2026 02:50:32 GMT
+Connection: keep-alive
+Keep-Alive: timeout=5
+Transfer-Encoding: chunked
+

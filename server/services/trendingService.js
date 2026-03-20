@@ -44,13 +44,29 @@ class TrendingService {
             let allTopics = [...newsTopics, ...rssTopics];
             console.log(`Found ${newsTopics.length} news topics and ${rssTopics.length} RSS topics.`);
 
-            // If we have very few topics and NOT searching, merge with fallbacks
-            if (!searchQuery && allTopics.length < 5) {
-                console.log('Low topic count, merging with fallback topics');
-                const fallbacks = this.getFallbackTopics();
+            // If we have very few topics, OR we are not searching, merge with fallbacks 
+            // This guarantees that every UI filter chip has at least one valid topic.
+            if (!searchQuery || allTopics.length < 5) {
+                console.log('Merging with fallback topics to ensure comprehensive coverage');
+                let fallbacks = this.getFallbackTopics();
+
+                // If the user searched, dynamically modify fallbacks to include their search term
+                if (searchQuery) {
+                    const term = searchQuery.charAt(0).toUpperCase() + searchQuery.slice(1);
+                    fallbacks = fallbacks.map(f => ({
+                        ...f,
+                        title: f.title.includes(':')
+                            ? `${term}: ${f.title.split(':')[1].trim()}`
+                            : `${term} and ${f.title}`,
+                        description: `Exploring how ${searchQuery.toLowerCase()} impacts ${f.description.toLowerCase()}`,
+                        category: term,
+                        trendScore: f.trendScore + 10 // Give search fallbacks a slight boost
+                    }));
+                }
+
                 const existingTitles = new Set(allTopics.map(t => t.title.toLowerCase()));
                 const uniqueFallbacks = fallbacks.filter(f => !existingTitles.has(f.title.toLowerCase()));
-                allTopics = [...allTopics, ...uniqueFallbacks.slice(0, 5 - allTopics.length)];
+                allTopics = [...allTopics, ...uniqueFallbacks]; // Always append all unique fallbacks so chips don't break
             }
 
             const rankedTopics = this.rankAndFilterTopics(allTopics);
@@ -267,36 +283,36 @@ class TrendingService {
             },
             {
                 title: 'Remote Work 2.0: Building Effective Hybrid Workforce Models',
-                description: 'Best practices for managing distributed teams and creating flexible work environments.',
+                description: 'Best practices for managing distributed workforce teams and creating flexible work environments.',
                 category: 'Remote Work',
                 trendScore: 82,
                 source: 'Fallback',
             },
             {
-                title: 'Employee Retention Strategies in a Competitive Labor Market',
-                description: 'Proven tactics to reduce turnover and keep top talent engaged in challenging times.',
+                title: 'Employee Retention Strategies in a Competitive Staffing Market',
+                description: 'Proven tactics to reduce turnover and keep top talent engaged in challenging staffing times.',
                 category: 'Employee Retention',
                 trendScore: 80,
                 source: 'Fallback',
             },
             {
-                title: 'Workforce Analytics: Data-Driven Decision Making for HR Leaders',
-                description: 'Leveraging people analytics to optimize workforce planning and performance.',
-                category: 'Workforce Analytics',
+                title: 'Workforce Analytics: Data-Driven Decision Making for Operations Leaders',
+                description: 'Leveraging people analytics to optimize workforce planning and daily operations.',
+                category: 'Workforce Operations',
                 trendScore: 78,
                 source: 'Fallback',
             },
             {
-                title: 'The Future of BPO: Automation and Human Expertise',
-                description: 'How business process outsourcing is evolving with technology integration.',
-                category: 'BPO Services',
+                title: 'The Future of Business Services: Automation and Human Expertise',
+                description: 'How business services outsourcing is evolving with technology integration.',
+                category: 'Business Services',
                 trendScore: 75,
                 source: 'Fallback',
             },
             {
-                title: 'Skills-Based Hiring: Moving Beyond Traditional Credentials',
-                description: 'Why companies are prioritizing skills over degrees in recruitment.',
-                category: 'Recruitment',
+                title: 'Skills-Based Hiring: Moving Beyond Traditional Credentials in BPO',
+                description: 'Why BPO companies are prioritizing skills over degrees in recruitment.',
+                category: 'Recruitment in BPO',
                 trendScore: 73,
                 source: 'Fallback',
             },
